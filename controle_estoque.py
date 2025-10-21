@@ -16,13 +16,22 @@ import tkinter as tk
 from db import delete_item
 import tkinter.messagebox as mbox
 
+def log_event(evento: str):
+    """Registra eventos importantes em um log local."""
+    try:
+        with open("app_log.txt", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] {evento}\n")
+    except Exception as e:
+        print(f"Erro ao registrar log: {e}")
+
+
 # ---------- APARÊNCIA ----------
 ctk.set_appearance_mode("light")  # tema claro
 ctk.set_default_color_theme("blue")
 
 # --- CONSTANTES GLOBAIS ---
 ATTACHMENTS_FOLDER_NOTEBOOKS = "anexos_notebooks"
-LISTA_OBRAS = [ "Domma", "Seleto Primavera", "Unic São Gonçalo", "PRIME Caxias", "LIV Primavera", "Reserva Equitativa", "Encantado", "Seleto Inhaúma" ]
+LISTA_OBRAS = [ "Domma", "Seleto Primavera", "Unic São Gonçalo", "PRIME Caxias", "LIV Primavera", "Reserva Equitativa", "Encantado", "Seleto Inhaúma", "STAND" ]
 STATUS_COLORS = {"Disponível": "#20FA14", "Alocado": "#F8443A", "Triagem": "#3B8BFC", "Verificar": "#FCBF3B", "Assistência Técnica": "#FBFF27", "Não definido": "#E0E0E0"}
 TEXT_COLORS = {"Disponível": "black", "Alocado": "black", "Triagem": "black", "Verificar": "black", "Assistência Técnica": "black", "Não definido": "black"}
 SITUACOES_NOTEBOOK = [ "Disponível", "Alocado", "Triagem", "Assistência Técnica", "Verificar"]
@@ -189,9 +198,12 @@ class AtivoDetailWindow(ctk.CTkToplevel):
             self.widgets['placa_id'].focus()
             return
 
-        # Preenche o campo de placa_id como readonly
+        # Preenche o campo de placa_id e mantém EDITÁVEL
         self.widgets['placa_id'].insert(0, self.placa_id_initial)
-        self.widgets['placa_id'].configure(state="readonly")
+        try:
+            self.widgets['placa_id'].configure(state="normal")  # garante edição
+        except Exception:
+            pass
 
         conn, cursor = db_connect_notebooks()
         cursor.execute("SELECT * FROM notebooks WHERE placa_id = ?", (self.placa_id_initial,))
@@ -221,7 +233,7 @@ class AtivoDetailWindow(ctk.CTkToplevel):
         if "obra" in data.keys() and data["obra"]:
             self.widgets['obra'].set(data["obra"])
 
-        # Periféricos (armazenado como CSV ou JSON)  # >>> PATCH robusto
+        # Periféricos (CSV/JSON tolerante a formatos legados)
         if "perifericos" in data.keys() and data["perifericos"] is not None:
             try:
                 import json, unicodedata
@@ -229,34 +241,32 @@ class AtivoDetailWindow(ctk.CTkToplevel):
                 def _norm(s: str) -> str:
                     s = (s or "").strip().lower()
                     s = unicodedata.normalize("NFKD", s)
-                    # remove acentos
                     s = "".join(c for c in s if not unicodedata.combining(c))
                     return s
 
                 raw = str(data["perifericos"] or "")
 
-                # aceita JSON ["Mouse","Teclado"] ou CSV com vários separadores antigos
+                # aceita JSON ["Mouse","Teclado"] ou CSV com separadores legados
                 if raw.startswith("["):
                     try:
                         selecionados = json.loads(raw)
                     except Exception:
                         selecionados = []
                 else:
-                    # normaliza separadores legados para vírgula
                     for sep in [";", "|", "/", "\\"]:
                         raw = raw.replace(sep, ",")
                     selecionados = [p.strip() for p in raw.split(",") if p.strip()]
 
-                # conjunto normalizado do que veio do banco
                 sel_norm = {_norm(p) for p in selecionados}
 
-                # marca as checkboxes por nome normalizado (tolerante a acento/caixa)
-                for nome, var in self.widgets['perifericos'].items():
-                    var.set(_norm(nome) in sel_norm)
+                # Marca checkboxes por nome normalizado (tolerante a acento/caixa)
+                if isinstance(self.widgets.get('perifericos'), dict):
+                    for nome, var in self.widgets['perifericos'].items():
+                        var.set(_norm(nome) in sel_norm)
 
             except Exception as e:
                 print(f"[WARN] Erro ao carregar periféricos: {e}")
-# <<< PATCH
+
 
 
         # Autocad
@@ -274,6 +284,7 @@ class AtivoDetailWindow(ctk.CTkToplevel):
 
     def save_event(self):
         import sqlite3
+
         # 1) Coleta robusta dos valores dos widgets
         data = {}
         for key, w in self.widgets.items():
@@ -284,8 +295,8 @@ class AtivoDetailWindow(ctk.CTkToplevel):
             elif isinstance(w, dict):
                 selecionados = [nome for nome, var in w.items() if var.get()]
                 data[key] = ",".join(selecionados)  # CSV com vírgula
-            # StringVar (situação, obra, autocad, fotos etc.)
-            elif hasattr(w, "get") and not hasattr(w, "insert"):  # cobre StringVar e OptionMenu
+            # StringVar / OptionMenu
+            elif hasattr(w, "get") and not hasattr(w, "insert"):
                 data[key] = w.get()
             else:
                 # CTkEntry e similares
@@ -295,78 +306,130 @@ class AtivoDetailWindow(ctk.CTkToplevel):
                     data[key] = ""
 
         # 2) Validação
-        if not data.get("placa_id"):
+        new_placa = (data.get("placa_id") or "").strip()
+        if not new_placa:
             messagebox.showerror("Erro", "O ID (Placa de Identificação) é obrigatório.")
             return
 
         # 3) Abre conexão e garante que as colunas existem
         conn, cursor = db_connect_notebooks()
         try:
-            # cria colunas se ainda não existirem
             cursor.execute("PRAGMA table_info(notebooks)")
             cols = {row[1] for row in cursor.fetchall()}
-            if "obra" not in cols:
-                try:
-                    cursor.execute("ALTER TABLE notebooks ADD COLUMN obra TEXT")
-                except Exception:
-                    pass
-            if "autocad" not in cols:
-                try:
-                    cursor.execute("ALTER TABLE notebooks ADD COLUMN autocad TEXT DEFAULT 'Não'")
-                except Exception:
-                    pass
-            # 'fotos' e 'perifericos' já devem existir, mas não custa checar
-            if "fotos" not in cols:
-                try:
-                    cursor.execute("ALTER TABLE notebooks ADD COLUMN fotos TEXT DEFAULT 'Não'")
-                except Exception:
-                    pass
-            if "perifericos" not in cols:
-                try:
-                    cursor.execute("ALTER TABLE notebooks ADD COLUMN perifericos TEXT")
-                except Exception:
-                    pass
+            for col_name, ddl in [
+                ("obra",      "ALTER TABLE notebooks ADD COLUMN obra TEXT"),
+                ("autocad",   "ALTER TABLE notebooks ADD COLUMN autocad TEXT DEFAULT 'Não'"),
+                ("fotos",     "ALTER TABLE notebooks ADD COLUMN fotos TEXT DEFAULT 'Não'"),
+                ("perifericos","ALTER TABLE notebooks ADD COLUMN perifericos TEXT")
+            ]:
+                if col_name not in cols:
+                    try:
+                        cursor.execute(ddl)
+                    except Exception:
+                        pass
 
-            # 4) Decide se atualiza ou insere
-            cursor.execute("SELECT 1 FROM notebooks WHERE placa_id = ?", (data["placa_id"],))
-            exists = cursor.fetchone()
+            is_edit = bool(self.placa_id_initial)
+            old_placa = self.placa_id_initial if is_edit else None
 
-            if exists:
-                # ✅ UPDATE com 13 set + WHERE (total 14 placeholders)
-                cursor.execute("""
-                    UPDATE notebooks
-                    SET numero_serie=?,
-                        usuario_anterior=?,
-                        usuario_atual=?,
-                        senha=?,
-                        setor=?,
-                        cargo=?,
-                        nota_fiscal=?,
-                        perifericos=?,
-                        observacao=?,
-                        situacao=?,
-                        fotos=?,
-                        obra=?,
-                        autocad=?
-                    WHERE placa_id=?
-                """, (
-                    data.get("numero_serie", ""),
-                    data.get("usuario_anterior", ""),
-                    data.get("usuario_atual", ""),
-                    data.get("senha", ""),
-                    data.get("setor", ""),
-                    data.get("cargo", ""),
-                    data.get("nota_fiscal", ""),
-                    data.get("perifericos", ""),
-                    data.get("observacao", ""),
-                    data.get("situacao", ""),
-                    data.get("fotos", "Não"),
-                    data.get("obra", ""),
-                    data.get("autocad", "Não"),
-                    data["placa_id"],
-                ))
+            if is_edit:
+                if new_placa != old_placa:
+                    # evita colisão
+                    cursor.execute("SELECT 1 FROM notebooks WHERE placa_id = ?", (new_placa,))
+                    if cursor.fetchone():
+                        messagebox.showerror("Erro", f"Já existe um notebook com ID '{new_placa}'.")
+                        conn.close()
+                        return
+
+                    # UPDATE trocando a PK
+                    cursor.execute("""
+                        UPDATE notebooks
+                        SET placa_id=?,
+                            numero_serie=?,
+                            usuario_anterior=?,
+                            usuario_atual=?,
+                            senha=?,
+                            setor=?,
+                            cargo=?,
+                            nota_fiscal=?,
+                            perifericos=?,
+                            observacao=?,
+                            situacao=?,
+                            fotos=?,
+                            obra=?,
+                            autocad=?
+                        WHERE placa_id=?
+                    """, (
+                        new_placa,
+                        data.get("numero_serie", ""),
+                        data.get("usuario_anterior", ""),
+                        data.get("usuario_atual", ""),
+                        data.get("senha", ""),
+                        data.get("setor", ""),
+                        data.get("cargo", ""),
+                        data.get("nota_fiscal", ""),
+                        data.get("perifericos", ""),
+                        data.get("observacao", ""),
+                        data.get("situacao", ""),
+                        data.get("fotos", "Não"),
+                        data.get("obra", ""),
+                        data.get("autocad", "Não"),
+                        old_placa,
+                    ))
+
+                    # Renomeia/move pasta de anexos, se existir
+                    try:
+                        # type: ignore
+                        old_path = os.path.join(ATTACHMENTS_FOLDER_NOTEBOOKS, old_placa)  # type: ignore
+                        new_path = os.path.join(ATTACHMENTS_FOLDER_NOTEBOOKS, new_placa)  # type: ignore
+                        if os.path.isdir(old_path):
+                            os.makedirs(ATTACHMENTS_FOLDER_NOTEBOOKS, exist_ok=True)
+                            if not os.path.exists(new_path):
+                                os.rename(old_path, new_path)
+                            else:
+                                # pasta nova já existe -> move conteúdo e remove pasta antiga
+                                for fname in os.listdir(old_path):
+                                    shutil.move(os.path.join(old_path, fname), new_path)
+                                shutil.rmtree(old_path, ignore_errors=True)
+                    except Exception as e:
+                        print("Aviso ao mover anexos:", e)
+
+                else:
+                    # edição sem troca de ID
+                    cursor.execute("""
+                        UPDATE notebooks
+                        SET numero_serie=?,
+                            usuario_anterior=?,
+                            usuario_atual=?,
+                            senha=?,
+                            setor=?,
+                            cargo=?,
+                            nota_fiscal=?,
+                            perifericos=?,
+                            observacao=?,
+                            situacao=?,
+                            fotos=?,
+                            obra=?,
+                            autocad=?
+                        WHERE placa_id=?
+                    """, (
+                        data.get("numero_serie", ""),
+                        data.get("usuario_anterior", ""),
+                        data.get("usuario_atual", ""),
+                        data.get("senha", ""),
+                        data.get("setor", ""),
+                        data.get("cargo", ""),
+                        data.get("nota_fiscal", ""),
+                        data.get("perifericos", ""),
+                        data.get("observacao", ""),
+                        data.get("situacao", ""),
+                        data.get("fotos", "Não"),
+                        data.get("obra", ""),
+                        data.get("autocad", "Não"),
+                        new_placa,
+                    ))
+
             else:
-                # ✅ INSERT com 14 colunas
+                # INSERT (novo registro)
                 cursor.execute("""
                     INSERT INTO notebooks (
                         placa_id,
@@ -385,7 +448,7 @@ class AtivoDetailWindow(ctk.CTkToplevel):
                         autocad
                     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
-                    data.get("placa_id", ""),
+                    new_placa,
                     data.get("numero_serie", ""),
                     data.get("usuario_anterior", ""),
                     data.get("usuario_atual", ""),
@@ -402,12 +465,26 @@ class AtivoDetailWindow(ctk.CTkToplevel):
                 ))
 
             conn.commit()
+
+            # log opcional
+            try:
+                if 'log_event' in globals():
+                    if is_edit:
+                        msg = f"Notebook '{old_placa}' atualizado para '{new_placa}'."
+                    else:
+                        msg = f"Notebook '{new_placa}' criado."
+                    log_event(msg)
+            except:
+                pass
+
             messagebox.showinfo("Sucesso", "Dados do notebook salvos com sucesso!")
             self.on_closing()
+
         except Exception as e:
             messagebox.showerror("Erro de Banco de Dados", f"Ocorreu um erro: {e}")
         finally:
             conn.close()
+
 
 
     def attach_file(self):
@@ -1413,21 +1490,24 @@ class NotebooksFrame(ctk.CTkFrame):
         for w in self.notebook_scroll_frame.winfo_children():
             w.destroy()
 
-        # busca notebooks e tenta trazer 'obra'; se não existir, usa 'setor' como obra
+        # busca notebooks, incluindo possivelmente o campo 'usuario_atual'
         conn, cursor = db_connect_notebooks()
         try:
-            cursor.execute("SELECT placa_id, situacao, obra FROM notebooks ORDER BY placa_id")
-            rows = cursor.fetchall()
-            rows = [dict(r) for r in rows]
-        except sqlite3.OperationalError:
-            try:
-                cursor.execute("SELECT placa_id, situacao, setor AS obra FROM notebooks ORDER BY placa_id")
-                rows = cursor.fetchall()
-                rows = [dict(r) for r in rows]
-            except Exception:
-                cursor.execute("SELECT placa_id, situacao FROM notebooks ORDER BY placa_id")
-                rows = cursor.fetchall()
-                rows = [dict(r) | {"obra": ""} for r in rows]
+            cursor.execute("""
+                SELECT placa_id, situacao,
+                    COALESCE(obra, setor, '') AS obra,
+                    COALESCE(usuario_atual, '') AS usuario_atual
+                FROM notebooks
+                ORDER BY CAST(placa_id AS INTEGER)
+            """)
+            rows = [dict(r) for r in cursor.fetchall()]
+        except Exception:
+            cursor.execute("""
+                SELECT placa_id, situacao
+                FROM notebooks
+                ORDER BY CAST(placa_id AS INTEGER)
+            """)
+            rows = [dict(r) | {"obra": "", "usuario_atual": ""} for r in cursor.fetchall()]
         finally:
             conn.close()
 
@@ -1450,23 +1530,34 @@ class NotebooksFrame(ctk.CTkFrame):
         for item in filtrados:
             color = STATUS_COLORS.get(item.get('situacao', ''), "#E0E0E0")
             text_color = TEXT_COLORS.get(item.get('situacao', ''), "black")
-            placa = item.get('placa_id', '')
+            placa = str(item.get('placa_id', '')).strip()
+            usuario = str(item.get('usuario_atual', '')).strip()
+
+            # exibe o nome da pessoa logo abaixo do número da placa
+            if usuario and usuario.lower() not in ("", "none", "null"):
+                if len(usuario) > 18:
+                    usuario = usuario[:18] + "…"
+                texto = f"{placa}\n{usuario}"
+            else:
+                texto = placa
 
             btn = ctk.CTkButton(
                 self.notebook_scroll_frame,
-                text=str(placa),
+                text=texto,
                 fg_color=color,
                 hover_color=color,
                 text_color=text_color,
+                height=50,  # levemente maior para caber duas linhas
                 command=lambda p=placa: self.open_detail_callback(p)
             )
             btn.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-            col = (col + 1) % 8
+            col = (col + 1) % 5
             if col == 0:
                 row += 1
 
-        for i in range(8):
+        for i in range(5):
             self.notebook_scroll_frame.grid_columnconfigure(i, weight=1)
+
 
     def abrir_relatorios_notebooks(self):
         janela = ctk.CTkToplevel(self)
@@ -2405,7 +2496,6 @@ def _on_login_ok(self, username: str):
     # define usuário logado, aplica preferências, etc.
     self.set_logged_user(username)
     self._set_sidebar_locked(False)
-
             
 
 class ThemeSwitcher(ctk.CTkFrame):
@@ -2420,8 +2510,7 @@ class ThemeSwitcher(ctk.CTkFrame):
                            command=self._apply).pack(side="left", padx=6)
 
     def _apply(self):
-        self.on_change(self.var.get())
-
+        self.on_change(self.var.get())    
 
 # ------------------------------
 # MAIN
