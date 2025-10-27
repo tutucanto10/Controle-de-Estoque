@@ -1,2 +1,0 @@
-[17/10/2025 17:57:19] Notebook '1' atualizado para 'asda'.
-[17/10/2025 17:57:32] Notebook 'asda' atualizado para '1'.

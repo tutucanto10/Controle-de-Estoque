@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Build / distribuição
+build/
+dist/
+*.egg-info/
+
+# Binários e executáveis
+*.exe
+*.msi
+*.dll
+
+# Bases de dados e dados locais
+*.db
+/data/
+/datasets/
+
+# Configs locais / segredos
+*.env
+.env*
+*.ini
+*.log
+
+# Sistemas operacionais / IDEs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
