@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+*.egg-info/
+.eggs/
+*.log
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Build / PyInstaller
+build/
+dist/
+*.spec
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Saídas / dados gerados
+*.xlsx
+*.csv
+*.pdf
+*.tmp
+
+# Credenciais locais
+config.ini
+*.env
+.streamlit/secrets.toml
+
+# Dados locais / SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+app_log.txt*
+*.log
+
+# Anexos gerados em runtime
+anexos_notebooks/
+anexos_obras/
+
+# Pasta de memória do Claude
+.claude/
