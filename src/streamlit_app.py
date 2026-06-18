@@ -328,6 +328,18 @@ def excel_bytes(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+def _logo_b64() -> str | None:
+    import base64
+    for name in ("logo.png", "logo.svg", "domma.png"):
+        path = os.path.join(os.path.dirname(__file__), "assets", name)
+        if os.path.exists(path):
+            ext = name.split(".")[-1]
+            mime = "svg+xml" if ext == "svg" else ext
+            with open(path, "rb") as f:
+                return f"data:image/{mime};base64,{base64.b64encode(f.read()).decode()}"
+    return None
+
+
 def page_header(title: str, subtitle: str = "", breadcrumb: str = ""):
     bc = (f'<div style="font-size:11.5px;font-weight:500;color:#94A3B8;'
           f'letter-spacing:.3px;margin-bottom:6px;text-transform:uppercase">'
@@ -361,51 +373,128 @@ def kpi_card(label: str, value, accent: str = "#2563EB", icon: str = "") -> str:
 # LOGIN
 # ══════════════════════════════════════════════════════════════════════════════
 def show_login():
-    # fundo cinza para a página inteira
-    st.markdown("""
+    logo = _logo_b64()
+    logo_html = (
+        f'<img src="{logo}" style="height:72px;max-width:200px;'
+        f'object-fit:contain;filter:brightness(0) invert(1)">'
+        if logo else
+        '<div style="font-size:38px;font-weight:800;color:#FFF;'
+        'letter-spacing:5px;font-family:Inter,sans-serif">DOMMA</div>'
+    )
+
+    st.markdown(f"""
     <style>
-    .main { background: #F1F5F9 !important; }
-    .main .block-container { display:flex; align-items:center; min-height:90vh;
-        justify-content:center; padding:2rem !important; }
+    /* Fundo escuro full-screen no login */
+    .stApp {{ background: #080F1E !important; }}
+    .main .block-container {{
+        padding: 0 !important;
+        max-width: 100% !important;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    /* Remove borda e fundo do form nesta página */
+    [data-testid="stForm"] {{
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }}
+    /* Labels dos inputs brancos */
+    .login-area label[data-testid="stWidgetLabel"] p {{
+        color: #94A3B8 !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: .5px !important;
+    }}
+    /* Inputs com fundo escuro */
+    .login-area [data-testid="stTextInput"] input {{
+        background: #1E293B !important;
+        border: 1px solid #334155 !important;
+        color: #F1F5F9 !important;
+        border-radius: 10px !important;
+        height: 48px !important;
+        font-size: 15px !important;
+        padding: 0 16px !important;
+    }}
+    .login-area [data-testid="stTextInput"] input:focus {{
+        border-color: #2563EB !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.25) !important;
+    }}
+    .login-area [data-testid="stTextInput"] input::placeholder {{
+        color: #475569 !important;
+    }}
+    /* Botão entrar */
+    .login-area [data-testid="stFormSubmitButton"] > button {{
+        background: #2563EB !important;
+        color: #FFF !important;
+        border: none !important;
+        border-radius: 12px !important;
+        height: 52px !important;
+        font-size: 15px !important;
+        font-weight: 700 !important;
+        letter-spacing: .3px !important;
+        width: 100% !important;
+        margin-top: 8px !important;
+        transition: background .2s !important;
+    }}
+    .login-area [data-testid="stFormSubmitButton"] > button:hover {{
+        background: #1D4ED8 !important;
+    }}
     </style>
+
+    <!-- Card shell -->
+    <div style="
+        width:420px;
+        background:#111827;
+        border-radius:24px;
+        overflow:hidden;
+        box-shadow:0 32px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+        margin:auto;
+        position:relative;
+    ">
+        <!-- Faixa superior decorativa -->
+        <div style="height:3px;background:linear-gradient(90deg,#2563EB,#8B5CF6,#06B6D4)"></div>
+
+        <!-- Header com logo -->
+        <div style="
+            padding:40px 44px 32px;
+            text-align:center;
+            background:linear-gradient(160deg,#0F172A 0%,#111827 100%);
+        ">
+            {logo_html}
+            <div style="
+                font-size:11px;color:#334155;margin-top:14px;
+                font-weight:600;letter-spacing:2px;font-family:Inter,sans-serif;
+                text-transform:uppercase
+            ">Controle de Estoque · T.I.</div>
+        </div>
+
+        <!-- Divisor sutil -->
+        <div style="height:1px;background:linear-gradient(90deg,transparent,#1E293B,transparent)"></div>
+    </div>
     """, unsafe_allow_html=True)
 
+    # Formulário Streamlit (renderiza abaixo do card HTML, mas aplicamos CSS para parecer dentro)
     _, col, _ = st.columns([1, 1.1, 1])
     with col:
-        # card container
         st.markdown("""
-        <div style="background:#FFF;border-radius:20px;overflow:hidden;
-                    box-shadow:0 8px 40px rgba(15,23,42,.12);margin-top:40px">
-            <div style="background:#0F172A;padding:40px 44px 32px;text-align:center">
-                <div style="font-size:36px;font-weight:800;color:#FFF;
-                            letter-spacing:4px;font-family:Inter,sans-serif">DOMMA</div>
-                <div style="font-size:12px;color:#475569;margin-top:8px;
-                            font-weight:500;letter-spacing:.5px">
-                    CONTROLE DE ESTOQUE · T.I.
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # form dentro de um card branco (continuação visual)
-        st.markdown("""
-        <div style="background:#FFF;border-radius:0 0 20px 20px;
-                    box-shadow:0 8px 40px rgba(15,23,42,.12);padding:28px 40px 32px;
-                    margin-top:-4px">
-        </div>
-        <style>
-        /* Remove borda padrão do form nesta tela */
-        [data-testid="stForm"] { background:transparent!important;
-            border:none!important; box-shadow:none!important; padding:0!important; }
-        </style>
+        <div style="
+            width:420px;
+            background:#111827;
+            border-radius:0 0 24px 24px;
+            padding:32px 40px 36px;
+            margin:-8px auto 0;
+            box-shadow:0 32px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+        "></div>
+        <div class="login-area">
         """, unsafe_allow_html=True)
 
         with st.form("login", clear_on_submit=False):
-            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-            username = st.text_input("Usuário", placeholder="Digite seu usuário")
-            senha    = st.text_input("Senha",   placeholder="Digite sua senha",
-                                     type="password")
-            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            username = st.text_input("Usuário", placeholder="seu.usuario")
+            senha    = st.text_input("Senha",   placeholder="••••••••", type="password")
             ok = st.form_submit_button("Entrar no Sistema",
                                        use_container_width=True, type="primary")
             if ok:
@@ -416,8 +505,9 @@ def show_login():
                     st.rerun()
 
         st.markdown(
-            "<p style='text-align:center;color:#CBD5E1;font-size:11px;"
-            "margin-top:16px;font-weight:500'>DOMMA Incorporações · T.I.</p>",
+            "<p style='text-align:center;color:#1E293B;font-size:11px;"
+            "font-weight:500;margin-top:20px'>© 2025 DOMMA Incorporações</p>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -436,12 +526,23 @@ _NAV_ACTIVE_STYLE = (
 def show_sidebar():
     with st.sidebar:
         # ── Brand ──────────────────────────────────────────────────────────
-        st.markdown("""
-        <div style="padding:28px 16px 16px">
-            <div style="font-size:22px;font-weight:800;color:#FFFFFF;
-                        letter-spacing:3px;font-family:'Inter',sans-serif">DOMMA</div>
-            <div style="font-size:10.5px;font-weight:500;color:#334155;
-                        margin-top:3px;letter-spacing:.5px;text-transform:uppercase">
+        logo = _logo_b64()
+        if logo:
+            brand_html = (
+                f'<img src="{logo}" style="height:36px;max-width:140px;'
+                f'object-fit:contain;filter:brightness(0) invert(1);'
+                f'margin-bottom:4px">'
+            )
+        else:
+            brand_html = (
+                '<div style="font-size:22px;font-weight:800;color:#FFFFFF;'
+                'letter-spacing:3px;font-family:Inter,sans-serif">DOMMA</div>'
+            )
+        st.markdown(f"""
+        <div style="padding:24px 16px 14px">
+            {brand_html}
+            <div style="font-size:10px;font-weight:600;color:#334155;
+                        margin-top:4px;letter-spacing:1.5px;text-transform:uppercase">
                 Controle de Estoque
             </div>
         </div>
